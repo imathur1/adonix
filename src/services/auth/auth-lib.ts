@@ -1,9 +1,11 @@
 import "dotenv";
+import * as crypto from "crypto";
 import ms from "ms";
 import { Collection, ObjectId } from "mongodb";
 import jsonwebtoken, { SignOptions } from "jsonwebtoken";
 import { RequestHandler } from "express-serve-static-core";
 import passport, { AuthenticateOptions, Profile } from "passport";
+import { Request, Response } from "express";
 
 import { Role } from "../../models.js";
 import Constants from "../../constants.js";
@@ -16,10 +18,87 @@ import { JwtPayload, Provider, ProfileData, RoleOperation } from "./auth-models.
 import { UserSchema } from "../user/user-schemas.js";
 import { getUser } from "../user/user-lib.js";
 
+import { EncodeDataRequest, DecodeDataRequest } from "./auth-formats.js";
+
 type AuthenticateFunction = (strategies: string | string[], options: AuthenticateOptions) => RequestHandler;
 type VerifyCallback = (err: Error | null, user?: Profile | false, info?: object) => void;
 type VerifyFunction = (accessToken: string, refreshToken: string, profile: Profile, done: VerifyCallback) => void;
 
+const JWTSecret: string = process.env.SECRET_KEY as string;
+
+type JWTHEader = {
+	alg: string,
+	typ: string,
+};
+
+/*
+Implements the encoding part of JWT spec, as defined in https://datatracker.ietf.org/doc/html/rfc7519
+*/
+function encodeJWT(data: JSON): string {
+	// HMAC SHA256
+	const header: JWTHEader = {
+		alg: "HS256",
+		typ: "JWT",
+	};
+  
+	const headerBase64: string = btoa(JSON.stringify(header));
+	const payloadBase64: string = btoa(JSON.stringify(data));
+	const signatureBase64: string = crypto.createHmac("sha256", JWTSecret).update(headerBase64 + "." + payloadBase64).digest("base64");
+  
+	const token: string = `${headerBase64}.${payloadBase64}.${signatureBase64}`;
+	return token;
+}
+
+/*
+Implements the decoding part of JWT spec, as defined in https://datatracker.ietf.org/doc/html/rfc7519
+*/
+function decodeJWT(token: string): JSON {
+	const [ , encodedPayload ] = token.split(".");
+  
+	const payload: string = atob(encodedPayload as string);
+	const payloadJSON: unknown = JSON.parse(payload);
+	return payloadJSON as JSON;
+}
+
+/**
+ * Encode encodes user and data into a token string
+ * @param request HTTP request received from the user
+ * @param response Response to send to the user
+ * @returns Promise, void if successful. Else, promise is rejected with reason for error
+ */
+export async function encodeData(request: Request, response: Response): Promise<void> {
+	const requestBody: EncodeDataRequest = request.body as EncodeDataRequest;
+
+	// Verify that parameters do exist
+	if (!requestBody || !requestBody.user || !requestBody.data) {
+		response.status(Constants.BAD_REQUEST).send({ error: "InvalidParams" });
+	}
+
+	// Create a new token, and send it back to the user
+	const token: string = encodeJWT(request.body as JSON);
+	response.status(Constants.SUCCESS).send({ token: token, context: {} });
+	return Promise.resolve();
+}
+
+/**
+ * Decode decodes a token string into a JSON object
+ * @param request HTTP request received from the user
+ * @param response Response to send to the user
+ * @returns Promise, void if successful. Else, promise is rejected with reason for error
+ */
+export async function decodeData(request: Request, response: Response): Promise<void> {
+	const requestBody: DecodeDataRequest = request.body as DecodeDataRequest;
+
+	// Verify that parameters do exist
+	if (!requestBody || !requestBody.token || !requestBody.context) {
+		response.status(Constants.BAD_REQUEST).send({ error: "InvalidParams" });
+	}
+
+	// Decode the token, and send the data back to the user
+	const data: JSON = decodeJWT(requestBody.token);
+	response.status(Constants.SUCCESS).send(data);
+	return Promise.resolve();
+}
 
 /**
  * Perform authentication step. Use this information to redirect to provider, perform auth, and then redirect user back to main website if successful or unsuccessful.
