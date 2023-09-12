@@ -14,7 +14,7 @@ import { SelectAuthProvider } from "../../middleware/select-auth.js";
 
 import { ModifyRoleRequest } from "./auth-formats.js";
 import { JwtPayload, ProfileData, Provider, RoleOperation } from "./auth-models.js";
-import { generateJwtToken, getDevice, getJwtPayloadFromProfile, getRoles, hasElevatedPerms, updateRoles, verifyFunction } from "./auth-lib.js";
+import { generateJwtToken, getDevice, getJwtPayloadFromProfile, getRoles, hasElevatedPerms, updateRoles, verifyFunction, encodeData, decodeData } from "./auth-lib.js";
 
 
 passport.use(Provider.GITHUB, new GitHubStrategy({
@@ -283,6 +283,54 @@ authRouter.get("/list/roles/", verifyJwt, (_: Request, res: Response) => {
 
 	res.status(Constants.SUCCESS).send({ roles: roles });
 });
+
+/**
+ * @api {post} /auth/encode/ POST /auth/encode/
+ * @apiGroup Auth
+ * @apiDescription Encode encodes user and data into a token string, allowing secure transmission and storage of sensitive information. It also includes a context field in the response for additional context.
+ *
+ * @apiBody {String} user The user identifier
+ * @apiBody {json} data The data to be encoded
+ * @apiParamExample {json} Example Request:
+ * {"user": "ishaan", "data": {"interview_skills": 0} }
+ *
+ * @apiSuccess {String} token The encoded token
+ * @apiSuccess {json} context The context to be used during decoding
+ * @apiSuccessExample Example Success Response:
+ *     HTTP/1.1 200 OK
+ *     {"token": "loremimpsumdolorsitamet", "context": {"additional_info": "some extra data"}}
+ *
+ * @apiError (400: Bad Request) {String} InvalidParams Invalid input passed in (missing user or data)
+ *
+ * @apiErrorExample Example Error Response:
+ *     HTTP/1.1 400 Bad Request
+ *     {"error": "InvalidParams"}
+ */
+authRouter.post("/encode/", encodeData);
+
+/**
+ * @api {post} /auth/decode/ POST /auth/decode/
+ * @apiGroup Auth
+ * @apiDescription Decodes an encoded token, revealing user and data information. It accepts a token and a context field in the request for additional context during decoding.
+ *
+ * @apiBody {String} token The token to decode
+ * @apiBody {json} context The context to be used during decoding
+ * @apiParamExample {json} Example Request:
+ * {"token": "loremimpsumdolorsitamet", "context": {"additional_info": "some extra data"}}
+ *
+ * @apiSuccess {String} user The user identifier
+ * @apiSuccess {json} data The decoded data
+ * @apiSuccessExample Example Success Response:
+ *     HTTP/1.1 200 OK
+ *     {"user": "ishaan", "data": {"interview_skills": 0} }
+ *
+ * @apiError (400: Bad Request) {String} InvalidParams Invalid input passed in (missing user or data)
+ *
+ * @apiErrorExample Example Error Response:
+ *     HTTP/1.1 400 Bad Request
+ *     {"error": "InvalidParams"}
+ */
+authRouter.post("/decode/", decodeData);
 
 
 /**
